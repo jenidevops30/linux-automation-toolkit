@@ -1,0 +1,163 @@
+---
+- name: Validate SSH key
+  ansible.builtin.assert:
+    that:
+      - devops_ssh_public_key | length > 20
+      - devops_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
+    fail_msg: "Set a real public SSH key in ansible/group_vars/production.yml before applying."
+
+- name: Create automation user
+  ansible.builtin.user:
+    name: "{{ devops_user }}"
+    shell: /bin/bash
+    groups: "{{ 'sudo' if ansible_facts.os_family == 'Debian' else 'wheel' }}"
+    append: true
+    create_home: true
+    state: present
+
+- name: Install automation user's SSH key
+  ansible.posix.authorized_key:
+    user: "{{ devops_user }}"
+    key: "{{ devops_ssh_public_key }}"
+    state: present
+
+- name: Update Debian package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Install Debian packages
+  ansible.builtin.apt:
+    name: "{{ common_packages + ['nginx', 'ufw'] }}"
+    state: present
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Install Red Hat packages
+  ansible.builtin.dnf:
+    name: "{{ common_packages + ['nginx', 'firewalld'] }}"
+    state: present
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: Configure SSH hardening
+  ansible.builtin.template:
+    src: ssh-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-linux-automation-toolkit.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/sshd -t -f /etc/ssh/sshd_config
+  notify: Restart SSH
+
+- name: Allow SSH through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_ssh_port }}"
+    proto: tcp
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Allow HTTP through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_http_port }}"
+    proto: tcp
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Allow HTTPS through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_https_port }}"
+    proto: tcp
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Enable UFW with deny incoming policy
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+  when: ansible_facts.os_family == 'Debian'
+
+- name: Enable firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: Allow SSH through firewalld
+  ansible.posix.firewalld:
+    port: "{{ firewall_ssh_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: Allow HTTP through firewalld
+  ansible.posix.firewalld:
+    service: http
+    permanent: true
+    immediate: true
+    state: enabled
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: Allow HTTPS through firewalld
+  ansible.posix.firewalld:
+    service: https
+    permanent: true
+    immediate: true
+    state: enabled
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: Create managed directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ managed_directories }}"
+
+- name: Deploy application configuration
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "{{ app_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Deploy Nginx configuration on Debian
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/linux-automation-toolkit.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/nginx -t -c /etc/nginx/nginx.conf
+  when: ansible_facts.os_family == 'Debian'
+  notify: Reload Nginx
+
+- name: Enable Nginx site on Debian
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/linux-automation-toolkit.conf
+    dest: /etc/nginx/sites-enabled/linux-automation-toolkit.conf
+    state: link
+  when: ansible_facts.os_family == 'Debian'
+  notify: Reload Nginx
+
+- name: Deploy Nginx configuration on Red Hat
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/conf.d/linux-automation-toolkit.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/nginx -t -c /etc/nginx/nginx.conf
+  when: ansible_facts.os_family == 'RedHat'
+  notify: Reload Nginx
+
+- name: Start and enable managed services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: "{{ managed_services }}"
