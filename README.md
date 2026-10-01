@@ -48,8 +48,66 @@ linux-automation-toolkit/
 ├── logs/
 │   └── .gitkeep
 ├── setup.sh
+├── ansible/
+│   ├── inventory/production.ini.example
+│   ├── group_vars/production.yml
+│   ├── playbooks/server.yml
+│   ├── roles/server/
+│   │   ├── defaults/main.yml
+│   │   ├── handlers/main.yml
+│   │   ├── tasks/main.yml
+│   │   └── templates/
+│   ├── requirements.yml
+│   └── ansible.cfg
 └── README.md
 ```
+
+## Remote Linux server configuration with Ansible
+
+The repository now also contains an Ansible configuration layer under `ansible/`. It complements the existing local health-report scripts and configures remote Linux hosts over SSH.
+
+It automates:
+
+- creation of a `devops` user and SSH public key
+- common package installation
+- SSH hardening
+- Nginx installation and configuration
+- UFW on Debian/Ubuntu or firewalld on Red Hat-family systems
+- application directories
+- a managed application configuration file
+- starting and enabling Nginx
+
+Install the required collections:
+
+```bash
+cd ansible
+ansible-galaxy collection install -r requirements.yml
+```
+
+Create the inventory from the example and edit the server address:
+
+```bash
+cp inventory/production.ini.example inventory/production.ini
+```
+
+Set your real public key in `group_vars/production.yml`. Do not commit private keys or secrets.
+
+Validate and preview before applying:
+
+```bash
+ansible-playbook --syntax-check -i inventory/production.ini playbooks/server.yml
+ansible-playbook --check -i inventory/production.ini playbooks/server.yml
+```
+
+Apply the configuration:
+
+```bash
+ansible-playbook -i inventory/production.ini playbooks/server.yml
+```
+
+**SSH safety:** the playbook creates the automation user and installs its public key before disabling password authentication. Test a second SSH session with the `devops` user before making any additional SSH lockdown changes.
+
+The Ansible role uses declarative, idempotent tasks so repeated runs converge the host toward the desired state. Ansible's official documentation describes this control-node/inventory/managed-node model and recommends playbooks for repeatable automation. citeturn0search6turn0search8
 
 ## Quick start
 

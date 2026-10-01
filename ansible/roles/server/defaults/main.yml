@@ -1,0 +1,13 @@
+---
+devops_user: devops
+devops_ssh_public_key: ""
+common_packages: [curl, git, unzip, vim, htop, ca-certificates]
+managed_services: [nginx]
+managed_directories:
+  - { path: /opt/myapp, owner: "{{ devops_user }}", group: "{{ devops_user }}", mode: "0755" }
+  - { path: /etc/myapp, owner: root, group: root, mode: "0755" }
+  - { path: /var/log/myapp, owner: "{{ devops_user }}", group: "{{ devops_user }}", mode: "0755" }
+firewall_ssh_port: 22
+firewall_http_port: 80
+firewall_https_port: 443
+app_config_path: /etc/myapp/app.conf

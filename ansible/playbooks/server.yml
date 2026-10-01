@@ -1,0 +1,7 @@
+---
+- name: Configure Linux servers
+  hosts: production
+  become: true
+  gather_facts: true
+  roles:
+    - server
