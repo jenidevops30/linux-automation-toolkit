@@ -1,0 +1,5 @@
+# Local Ansible inventory may contain private infrastructure details
+ansible/inventory/production.ini
+
+# Ansible-generated retry files
+*.retry
